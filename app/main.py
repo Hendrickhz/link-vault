@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth
+from app.routers import auth, bookmarks
 from app.database import Base, engine
 import app.models
 
@@ -14,5 +14,5 @@ async def on_startup():
         await conn.run_sync(Base.metadata.create_all)
         
 app.include_router(auth.router)
-# app.include_router(bookmarks.router)
+app.include_router(bookmarks.router)
 

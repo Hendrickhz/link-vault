@@ -5,10 +5,6 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
@@ -53,3 +49,9 @@ class BookmarkResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class BookmarkUpdate(BaseModel):
+    url: HttpUrl | None = None
+    title: str | None = None
+    description: str | None = None
+    is_favorite: bool | None = None
+    tag_ids: list[int] = Field(default_factory=list)
