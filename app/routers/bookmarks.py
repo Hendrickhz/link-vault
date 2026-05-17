@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
-from app.models import Bookmark, User
-from app.schemas import Token, BookmarkCreate, BookmarkResponse, BookmarkUpdate
+from app.models import Bookmark, User, BookmarkTag, Tag
+from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate
+from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix='/bookmarks', tags=["Bookmarks"])
 
@@ -46,7 +47,9 @@ async def get_bookmarks(
     current_user: User = Depends(get_current_user)
 ):
     result = await db.execute(
-        select(Bookmark).where(
+        select(Bookmark).options(
+            selectinload(Bookmark.tags)
+        ).where(
             Bookmark.user_id == current_user.id
             ))
     all_bookmarks = result.scalars().all()
@@ -61,7 +64,9 @@ async def get_bookmark_by_id(
     current_user: User = Depends(get_current_user)
 ):
     result = await db.execute(
-        select(Bookmark).where(
+        select(Bookmark).options(
+            selectinload(Bookmark.tags)
+        ).where(
             Bookmark.id == bookmark_id,
             Bookmark.user_id == current_user.id
             ))
@@ -135,4 +140,115 @@ async def delete_bookmark(
         )
 
     await db.delete(bookmark)
+    await db.commit()
+
+
+@router.post("/{bookmark_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def add_tag_to_bookmark(
+    bookmark_id: int,
+    tag_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    bookmark = result.scalar_one_or_none()
+
+    if bookmark is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bookmark not found",
+        )
+    
+    result = await db.execute(
+        select(Tag).where(
+            Tag.id == tag_id,
+            Tag.user_id == current_user.id,
+        )
+    )
+    tag = result.scalar_one_or_none()
+
+    if tag is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tag not found",
+        )
+    
+    result = await db.execute(
+        select(BookmarkTag).where(
+            BookmarkTag.bookmark_id == bookmark_id,
+            BookmarkTag.tag_id == tag_id,
+        )
+    )
+    existing_link = result.scalar_one_or_none()
+
+    if existing_link:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tag already attached to bookmark",
+        )
+    
+    link = BookmarkTag(
+        bookmark_id=bookmark_id,
+        tag_id=tag_id,
+    )
+
+    db.add(link)
+    await db.commit()
+
+@router.delete("/{bookmark_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_tag_from_bookmark(
+    bookmark_id: int,
+    tag_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    bookmark = result.scalar_one_or_none()
+
+    if bookmark is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bookmark not found",
+        )
+    
+    result = await db.execute(
+        select(Tag).where(
+            Tag.id == tag_id,
+            Tag.user_id == current_user.id,
+        )
+    )
+    tag = result.scalar_one_or_none()
+
+    if tag is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tag not found",
+        )
+    
+    result = await db.execute(
+        select(BookmarkTag).where(
+            BookmarkTag.bookmark_id == bookmark_id,
+            BookmarkTag.tag_id == tag_id,
+        )
+    )
+    existing_link = result.scalar_one_or_none()
+
+    if not existing_link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tag is not attached to bookmark",
+        )
+    
+    
+    await db.delete(existing_link)
     await db.commit()

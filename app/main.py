@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, bookmarks
+from app.routers import auth, bookmarks, tags
 from app.database import Base, engine
 import app.models
 
@@ -15,4 +15,5 @@ async def on_startup():
         
 app.include_router(auth.router)
 app.include_router(bookmarks.router)
+app.include_router(tags.router)
 

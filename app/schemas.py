@@ -26,10 +26,13 @@ class BookmarkCreate(BaseModel):
     title: str
     description: str | None = None
     is_favorite: bool = False
-    tag_ids: list[int] = Field(default_factory=list)
+    # tag_ids: list[int] = Field(default_factory=list)
 
 
 class TagCreate(BaseModel):
+    name: str
+
+class TagUpdate(BaseModel):
     name: str
 
 class TagResponse(BaseModel):
@@ -54,4 +57,4 @@ class BookmarkUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     is_favorite: bool | None = None
-    tag_ids: list[int] = Field(default_factory=list)
+    # tag_ids: list[int] = Field(default_factory=list)

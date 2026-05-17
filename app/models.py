@@ -1,6 +1,7 @@
 from app.database import Base
 from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime
 from datetime import datetime
+from sqlalchemy.orm import relationship
 
 class User(Base):
     __tablename__ = "users"
@@ -10,6 +11,9 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    bookmarks = relationship("Bookmark", back_populates="user")
+    tags = relationship("Tag", back_populates="user")
 
 class Bookmark(Base):
     __tablename__ = "bookmarks"
@@ -23,6 +27,9 @@ class Bookmark(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    user = relationship("User", back_populates="bookmarks")
+    tags = relationship("Tag", secondary="bookmark_tags", back_populates="bookmarks")
+
 class Tag(Base):
     __tablename__ = "tags"
 
@@ -30,6 +37,9 @@ class Tag(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="tags")
+    bookmarks = relationship("Bookmark", secondary="bookmark_tags", back_populates="tags")
 
 class BookmarkTag(Base):
     __tablename__ = "bookmark_tags"
