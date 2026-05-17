@@ -108,8 +108,7 @@ async def update_tag(
             detail="Tag with the same name already exists",
         )
     
-    if data.name is not None:
-        tag.name = data.name
+    tag.name = data.name
 
     await db.commit()
     await db.refresh(tag)

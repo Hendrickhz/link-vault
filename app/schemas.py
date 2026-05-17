@@ -58,3 +58,11 @@ class BookmarkUpdate(BaseModel):
     description: str | None = None
     is_favorite: bool | None = None
     # tag_ids: list[int] = Field(default_factory=list)
+
+
+class BookmarkListResponse(BaseModel):
+    items: list[BookmarkResponse]
+    total: int
+    page: int
+    limit: int
+    pages: int

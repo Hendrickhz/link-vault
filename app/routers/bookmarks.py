@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models import Bookmark, User, BookmarkTag, Tag
-from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate
+from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate, BookmarkListResponse
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix='/bookmarks', tags=["Bookmarks"])
@@ -41,21 +41,140 @@ async def create_bookmark(
 
     return new_bookmark
 
-@router.get("/", response_model=list[BookmarkResponse])
+@router.get("/", response_model=BookmarkListResponse)
 async def get_bookmarks(
+    page: int = 1,
+    limit: int = 20,
+    favorite: bool | None = None,
+    tag: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    result = await db.execute(
-        select(Bookmark).options(
-            selectinload(Bookmark.tags)
-        ).where(
-            Bookmark.user_id == current_user.id
-            ))
-    all_bookmarks = result.scalars().all()
+    if page < 1 or limit < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Page and limit must be greater than 0",
+        )
 
-    return all_bookmarks
+    query = (
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(Bookmark.user_id == current_user.id)
+    )
+
+    count_query = (
+        select(func.count())
+        .select_from(Bookmark)
+        .where(Bookmark.user_id == current_user.id)
+    )
+
+    if favorite is not None:
+        query = query.where(Bookmark.is_favorite == favorite)
+        count_query = count_query.where(Bookmark.is_favorite == favorite)
+
+    if tag is not None:
+        query = query.join(Bookmark.tags).where(
+            Tag.name == tag,
+            Tag.user_id == current_user.id
+        ).distinct()
+
+        count_query = (
+            select(func.count(func.distinct(Bookmark.id)))
+            .select_from(Bookmark)
+            .join(Bookmark.tags)
+            .where(
+                Bookmark.user_id == current_user.id,
+                Tag.name == tag,
+                Tag.user_id == current_user.id,
+            )
+        )
+
+    offset = (page - 1) * limit
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    result = await db.execute(
+        query.offset(offset).limit(limit)
+    )
+    bookmarks = result.scalars().all()
+
+    pages = (total + limit - 1) // limit if total > 0 else 0
+
+    return {
+        "items": bookmarks,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages,
+    }
+
+@router.get("/search", response_model=BookmarkListResponse)
+async def search_bookmarks(
+    q:str,
+    page: int = 1,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not q.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search query cannot be empty",
+        )
+
+    if page < 1 or limit < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Page and limit must be greater than 0",
+        )
     
+    query = (
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(
+            Bookmark.user_id == current_user.id,
+            or_(
+                Bookmark.title.ilike(f"%{q}%"),
+                Bookmark.url.ilike(f"%{q}%"),
+                Bookmark.description.ilike(f"%{q}%"),
+            )
+        )
+    )
+
+    count_query = (
+        select(func.count())
+        .select_from(Bookmark)
+        .where(
+            Bookmark.user_id == current_user.id,
+            or_(
+                Bookmark.title.ilike(f"%{q}%"),
+                Bookmark.url.ilike(f"%{q}%"),
+                Bookmark.description.ilike(f"%{q}%"),
+            )
+        )
+    )
+
+    offset = (page - 1) * limit
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    result = await db.execute(
+        query.offset(offset).limit(limit)
+    )
+    bookmarks = result.scalars().all()
+
+    pages = (total + limit - 1) // limit if total > 0 else 0
+
+    return {
+        "items": bookmarks,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages,
+    }
+
 
 @router.get("/{bookmark_id}", response_model=BookmarkResponse)
 async def get_bookmark_by_id(
@@ -117,8 +236,17 @@ async def update_bookmark(
         bookmark.is_favorite = data.is_favorite
 
     await db.commit()
-    await db.refresh(bookmark)
-    return bookmark
+    result = await db.execute(
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    updated_bookmark = result.scalar_one()
+
+    return updated_bookmark
 
 @router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bookmark(
@@ -252,3 +380,36 @@ async def remove_tag_from_bookmark(
     
     await db.delete(existing_link)
     await db.commit()
+
+@router.post("/{bookmark_id}/favorite", response_model=BookmarkResponse)
+async def toggle_favorite(
+    bookmark_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id
+            ))
+    bookmark = result.scalar_one_or_none()
+
+    if bookmark is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bookmark Not Found"
+        )
+    
+    bookmark.is_favorite = not bookmark.is_favorite
+    await db.commit()
+    result = await db.execute(
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    updated_bookmark = result.scalar_one()
+
+    return updated_bookmark
