@@ -9,7 +9,13 @@ from app.schemas import Token, UserCreate, UserResponse
 
 router = APIRouter(prefix='/auth', tags=["Auth"])
 
-@router.post("/register", response_model= UserResponse, status_code= status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a user",
+    description="Create a new user account with an email address and password.",
+)
 async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     email = user.email
     password = user.password
@@ -35,7 +41,12 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
      
     return new_user
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="Log in",
+    description="Authenticate a user and return a JWT bearer token.",
+)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
@@ -62,6 +73,11 @@ async def login(
 
     return {"access_token": token, "token_type": "bearer"}
 
-@router.get("/me", response_model= UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user",
+    description="Return the authenticated user's profile.",
+)
 async def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user

@@ -1,11 +1,16 @@
 from fastapi import FastAPI
 from app.routers import auth, bookmarks, tags
 from app.database import Base, engine
-import app.models
 
 app = FastAPI(
     title="LinkVault API",
-    description="A personal bookmark manager REST API with JWT authentication.",
+    description=(
+        "A personal bookmark manager REST API with JWT authentication, tagging, "
+        "search, filtering, favorites, and pagination.\n\n"
+        "Demo data:\n"
+        "- Demo user: `demo@example.com` / `demo1234`\n"
+        "- Demo user: `reader@example.com` / `reader1234`"
+    ),
     version="1.0.0",
 )
 @app.on_event("startup")

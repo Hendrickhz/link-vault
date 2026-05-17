@@ -8,40 +8,12 @@ from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix='/bookmarks', tags=["Bookmarks"])
 
-@router.post("/", response_model=BookmarkResponse, status_code=status.HTTP_201_CREATED)
-async def create_bookmark(
-    bookmark: BookmarkCreate, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-    ):
-    result = await db.execute(
-        select(Bookmark).where(
-            Bookmark.title == bookmark.title,
-            Bookmark.user_id == current_user.id
-            ))
-    is_existing = result.scalar_one_or_none()
-
-    if is_existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bookmark with the same title already exists"
-        )
-    
-    new_bookmark = Bookmark(
-        title = bookmark.title,
-        url = str(bookmark.url),
-        description = bookmark.description,
-        is_favorite = bookmark.is_favorite,
-        user_id = current_user.id
-    )
-
-    db.add(new_bookmark)
-    await db.commit()
-    await db.refresh(new_bookmark)
-
-    return new_bookmark
-
-@router.get("/", response_model=BookmarkListResponse)
+@router.get(
+    "/",
+    response_model=BookmarkListResponse,
+    summary="List bookmarks",
+    description="List the authenticated user's bookmarks with pagination and optional favorite or tag filtering.",
+)
 async def get_bookmarks(
     page: int = 1,
     limit: int = 20,
@@ -88,6 +60,8 @@ async def get_bookmarks(
                 Tag.user_id == current_user.id,
             )
         )
+        if favorite is not None:
+            count_query = count_query.where(Bookmark.is_favorite == favorite)
 
     offset = (page - 1) * limit
 
@@ -109,7 +83,12 @@ async def get_bookmarks(
         "pages": pages,
     }
 
-@router.get("/search", response_model=BookmarkListResponse)
+@router.get(
+    "/search",
+    response_model=BookmarkListResponse,
+    summary="Search bookmarks",
+    description="Search the authenticated user's bookmarks by title, URL, or description.",
+)
 async def search_bookmarks(
     q:str,
     page: int = 1,
@@ -175,8 +154,59 @@ async def search_bookmarks(
         "pages": pages,
     }
 
+@router.post(
+    "/",
+    response_model=BookmarkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a bookmark",
+    description="Create a new bookmark owned by the authenticated user.",
+)
+async def create_bookmark(
+    bookmark: BookmarkCreate, 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+    ):
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.title == bookmark.title,
+            Bookmark.user_id == current_user.id
+            ))
+    is_existing = result.scalar_one_or_none()
 
-@router.get("/{bookmark_id}", response_model=BookmarkResponse)
+    if is_existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bookmark with the same title already exists"
+        )
+    
+    new_bookmark = Bookmark(
+        title = bookmark.title,
+        url = str(bookmark.url),
+        description = bookmark.description,
+        is_favorite = bookmark.is_favorite,
+        user_id = current_user.id
+    )
+
+    db.add(new_bookmark)
+    await db.commit()
+    result = await db.execute(
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(
+            Bookmark.id == new_bookmark.id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    created_bookmark = result.scalar_one()
+
+    return created_bookmark
+
+@router.get(
+    "/{bookmark_id}",
+    response_model=BookmarkResponse,
+    summary="Get a bookmark",
+    description="Return a single bookmark owned by the authenticated user.",
+)
 async def get_bookmark_by_id(
     bookmark_id: int,
     db: AsyncSession = Depends(get_db),
@@ -197,10 +227,14 @@ async def get_bookmark_by_id(
             detail="Bookmark Not Found"
         )
     
-    return bookmark
-    
+    return bookmark   
 
-@router.put("/{bookmark_id}", response_model=BookmarkResponse)
+@router.put(
+    "/{bookmark_id}",
+    response_model=BookmarkResponse,
+    summary="Update a bookmark",
+    description="Update a bookmark owned by the authenticated user.",
+)
 async def update_bookmark(
     bookmark_id: int,
     data: BookmarkUpdate,
@@ -248,7 +282,12 @@ async def update_bookmark(
 
     return updated_bookmark
 
-@router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{bookmark_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a bookmark",
+    description="Delete a bookmark owned by the authenticated user.",
+)
 async def delete_bookmark(
     bookmark_id: int,
     db: AsyncSession = Depends(get_db),
@@ -270,8 +309,50 @@ async def delete_bookmark(
     await db.delete(bookmark)
     await db.commit()
 
+@router.post(
+    "/{bookmark_id}/favorite",
+    response_model=BookmarkResponse,
+    summary="Toggle favorite",
+    description="Toggle the favorite status of a bookmark owned by the authenticated user.",
+)
+async def toggle_favorite(
+    bookmark_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(Bookmark).where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id
+            ))
+    bookmark = result.scalar_one_or_none()
 
-@router.post("/{bookmark_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+    if bookmark is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bookmark Not Found"
+        )
+    
+    bookmark.is_favorite = not bookmark.is_favorite
+    await db.commit()
+    result = await db.execute(
+        select(Bookmark)
+        .options(selectinload(Bookmark.tags))
+        .where(
+            Bookmark.id == bookmark_id,
+            Bookmark.user_id == current_user.id,
+        )
+    )
+    updated_bookmark = result.scalar_one()
+
+    return updated_bookmark
+
+@router.post(
+    "/{bookmark_id}/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Attach a tag",
+    description="Attach one of the authenticated user's tags to one of their bookmarks.",
+)
 async def add_tag_to_bookmark(
     bookmark_id: int,
     tag_id: int,
@@ -328,7 +409,12 @@ async def add_tag_to_bookmark(
     db.add(link)
     await db.commit()
 
-@router.delete("/{bookmark_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{bookmark_id}/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a tag",
+    description="Remove a tag association from one of the authenticated user's bookmarks.",
+)
 async def remove_tag_from_bookmark(
     bookmark_id: int,
     tag_id: int,
@@ -380,36 +466,3 @@ async def remove_tag_from_bookmark(
     
     await db.delete(existing_link)
     await db.commit()
-
-@router.post("/{bookmark_id}/favorite", response_model=BookmarkResponse)
-async def toggle_favorite(
-    bookmark_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    result = await db.execute(
-        select(Bookmark).where(
-            Bookmark.id == bookmark_id,
-            Bookmark.user_id == current_user.id
-            ))
-    bookmark = result.scalar_one_or_none()
-
-    if bookmark is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bookmark Not Found"
-        )
-    
-    bookmark.is_favorite = not bookmark.is_favorite
-    await db.commit()
-    result = await db.execute(
-        select(Bookmark)
-        .options(selectinload(Bookmark.tags))
-        .where(
-            Bookmark.id == bookmark_id,
-            Bookmark.user_id == current_user.id,
-        )
-    )
-    updated_bookmark = result.scalar_one()
-
-    return updated_bookmark

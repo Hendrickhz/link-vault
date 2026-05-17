@@ -7,7 +7,13 @@ from app.schemas import TagCreate, TagResponse, TagUpdate
 
 router = APIRouter(prefix='/tags', tags=["Tags"])
 
-@router.post("/", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=TagResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a tag",
+    description="Create a new tag owned by the authenticated user.",
+)
 async def create_tag(
     data: TagCreate, 
     db: AsyncSession = Depends(get_db),
@@ -37,7 +43,12 @@ async def create_tag(
 
     return new_tag
 
-@router.get("/", response_model=list[TagResponse])
+@router.get(
+    "/",
+    response_model=list[TagResponse],
+    summary="List tags",
+    description="List all tags owned by the authenticated user.",
+)
 async def get_tags(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -51,7 +62,12 @@ async def get_tags(
     return all_tags
     
 
-@router.get("/{tag_id}", response_model=TagResponse)
+@router.get(
+    "/{tag_id}",
+    response_model=TagResponse,
+    summary="Get a tag",
+    description="Return a single tag owned by the authenticated user.",
+)
 async def get_tag_by_id(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
@@ -73,7 +89,12 @@ async def get_tag_by_id(
     return tag
     
 
-@router.put("/{tag_id}", response_model=TagResponse)
+@router.put(
+    "/{tag_id}",
+    response_model=TagResponse,
+    summary="Update a tag",
+    description="Update a tag owned by the authenticated user.",
+)
 async def update_tag(
     tag_id: int,
     data: TagUpdate,
@@ -114,7 +135,12 @@ async def update_tag(
     await db.refresh(tag)
     return tag
 
-@router.delete("/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a tag",
+    description="Delete a tag owned by the authenticated user.",
+)
 async def delete_tag(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
